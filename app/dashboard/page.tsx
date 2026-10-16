@@ -82,6 +82,12 @@ async function Dashboard() {
           >
             Voir mes articles →
           </Link>
+          <Link
+              href="/dashboard/digest"
+              className="mb-8 ml-2 inline-block rounded border px-3 py-2"
+            >
+              Mon digest hebdo →
+          </Link>
         <div>
           <h1 className="text-2xl font-bold">Bienvenue {user.name}</h1>
           <p className="text-sm text-gray-500">{user.email}</p>
