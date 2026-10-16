@@ -1,0 +1,174 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String         @id
+  name          String
+  email         String         @unique
+  emailVerified Boolean        @default(false)
+  image         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  digestSettings DigestSettings?
+  sessions      Session[]
+  accounts      Account[]
+  folders       Folder[]
+  subscriptions Subscription[]
+  keywords      Keyword[]
+  articleStates ArticleState[]
+  digests        Digest[]
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Folder {
+  id            String         @id @default(cuid())
+  name          String
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptions Subscription[]
+  createdAt     DateTime       @default(now())
+
+  @@unique([userId, name])
+}
+
+model Feed {
+  id            String         @id @default(cuid())
+  url           String         @unique
+  title         String
+  siteUrl       String?
+  lastFetchedAt DateTime?
+  articles      Article[]
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feedId    String
+  feed      Feed     @relation(fields: [feedId], references: [id], onDelete: Cascade)
+  folderId  String?
+  folder    Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, feedId])
+}
+
+model Article {
+  id          String    @id @default(cuid())
+  feedId      String
+  feed        Feed      @relation(fields: [feedId], references: [id], onDelete: Cascade)
+  guid        String
+  title       String
+  link        String
+  summary     String?
+  publishedAt DateTime?
+  states        ArticleState[]
+  createdAt   DateTime    @default(now())
+
+  @@unique([feedId, guid])
+}
+
+enum KeywordType {
+  INCLUDE
+  EXCLUDE
+}
+
+model Keyword {
+  id        String      @id @default(cuid())
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  word      String
+  type      KeywordType
+  createdAt DateTime    @default(now())
+
+  @@unique([userId, word, type])
+}
+
+model ArticleState {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  articleId String
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  isRead    Boolean  @default(false)
+  isStarred Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, articleId])
+}
+
+model DigestSettings {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  enabled      Boolean  @default(false)
+  days         Int[]    @default([0])
+  maxArticles  Int      @default(30)
+  style        String   @default("themes")
+  useFilters   Boolean  @default(true)
+  instructions String   @default("")
+  updatedAt    DateTime @updatedAt
+}
+
+model Digest {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content      String
+  sources      Json
+  articleCount Int
+  periodStart  DateTime
+  periodEnd    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+}
