@@ -13,7 +13,7 @@ import {
 } from "../actions";
 
 type View = "all" | "unread" | "starred";
-type Params = { folder?: string; q?: string; all?: string; view?: string };
+type Params = { folder?: string; q?: string; all?: string; view?: string; limit?: string };
 
 // Construit une adresse en gardant seulement les paramètres utiles
 function href(params: Record<string, string | undefined>) {
@@ -37,7 +37,7 @@ function textMatch(word: string): Prisma.ArticleWhereInput {
 
 async function Articles({ searchParams }: { searchParams: Promise<Params> }) {
   const user = await requireUser();
-  const { folder, q: rawQ, all, view: rawView } = await searchParams;
+  const { folder, q: rawQ, all, view: rawView, limit: rawLimit } = await searchParams;
   const q = rawQ?.trim().slice(0, 100) || undefined;
   const useFilters = all !== "1";
   const view: View =
@@ -98,8 +98,9 @@ async function Articles({ searchParams }: { searchParams: Promise<Params> }) {
           return !excludes.some((k) => text.includes(k.word));
         })
       : fetched;
-  const articles = kept.slice(0, 50);
-
+  const shown = Math.min(200, Math.max(50, Math.round((Number(rawLimit) || 50) / 50) * 50));
+  const articles = kept.slice(0, shown);
+  const hasMore = kept.length > shown;
   const hasRules = keywords.length > 0;
 
   const tabs = [
@@ -305,6 +306,20 @@ async function Articles({ searchParams }: { searchParams: Promise<Params> }) {
             );
           })}
         </ul>
+      )}
+      {hasMore && (
+        <Link
+          href={href({
+            folder,
+            q,
+            all,
+            view: viewParam,
+            limit: String(shown + 50),
+          })}
+          className="mt-4 inline-block rounded border px-3 py-2 text-sm"
+        >
+          Voir plus d'articles
+        </Link>
       )}
     </>
   );

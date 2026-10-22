@@ -6,6 +6,10 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { parser, saveArticles, refreshMany } from "@/lib/feeds";
+import { XMLParser } from "fast-xml-parser";
+import { assertPublicUrl } from "@/lib/safe-url";
+import { string } from "better-auth";
+import { rateLimit } from "@/lib/rate-limit";
 
 
 type AddState = { error?: string; success?: string } | null;
@@ -67,6 +71,9 @@ export async function addSubscription(
   formData: FormData
 ): Promise<AddState> {
   const user = await requireUser();
+  if (!rateLimit(`add:${user.id}`, 30, 10 * 60 * 1000)) {
+    return {error: "Trop d'ajouts d'affilée. Réessaie dans quelques minutes."}
+  }
   const url = String(formData.get("url") ?? "").trim();
   let folderId: string | null = String(formData.get("folderId") ?? "") || null;
   if (!url) return { error: "Colle l'adresse d'un flux RSS." };
@@ -98,6 +105,12 @@ export async function addSubscription(
     where: { userId_feedId: { userId: user.id, feedId: feed.id } },
   });
   if (existing) return { error: "Tu es déjà abonné à ce flux." };
+
+  const maxSubs = Number(process.env.Max_SUBSCRIPTION) || 200;
+  const subCount = await prisma.subscription.count({ where: { userId: user.id }} );
+  if (subCount >= maxSubs){
+    return { error : `Limite de ${maxSubs} abonnements atteinte.` };
+  }
 
   await prisma.subscription.create({
     data: { userId: user.id, feedId: feed.id, folderId },
@@ -149,7 +162,10 @@ export async function removeSubscription(formData: FormData) {
 // ---------- APERÇU ET ACTUALISATION ----------
 
 export async function previewFeed(url: string): Promise<PreviewResult> {
-  await requireUser(); // réservé aux comptes connectés
+  const user = await requireUser(); // réservé aux comptes connectés
+  if (!rateLimit(`preview:${user.id}`, 20, 10 * 60 * 1000)) {
+    return { error: "Trop d'aperçus d'affilée. Réessaie dans quelques minutes." };
+  }
 
   const clean = url.trim();
   if (!/^https?:\/\//i.test(clean)) {
@@ -175,6 +191,7 @@ export async function previewFeed(url: string): Promise<PreviewResult> {
 // Actualise uniquement les flux auxquels l'utilisateur est abonné
 export async function refreshMyFeeds() {
   const user = await requireUser();
+  if (!rateLimit(`refresh:${user.id}`, 10, 60 * 60 * 1000)) return;
   const feeds = await prisma.feed.findMany({
     where: { subscriptions: { some: { userId: user.id } } },
     select: { id: true, url: true },
@@ -280,4 +297,137 @@ export async function markAllRead(formData: FormData) {
     }),
   ]);
   revalidatePath("/dashboard/articles");
+}
+
+// ---------- IMPORT OPML ----------
+
+type ImportState = { error?: string; success?: string } | null;
+type OpmlFeed = { url: string; title: string; folder: string | null };
+
+const xmlParser = new XMLParser({
+  ignoreAttributes: false,
+  attributeNamePrefix: "@_",
+  isArray: (name) => name === "outline", // un seul <outline> = quand même une liste
+});
+
+// Parcourt les <outline> : avec xmlUrl = un flux, sinon = un dossier
+function collectFeeds(nodes: unknown, folder: string | null, out: OpmlFeed[]) {
+  if (!Array.isArray(nodes)) return;
+
+  for (const raw of nodes) {
+    if (!raw || typeof raw !== "object") continue;
+    const node = raw as Record<string, unknown>;
+
+    const xmlUrl =
+      typeof node["@_xmlUrl"] === "string" ? node["@_xmlUrl"].trim() : "";
+    const name = String(node["@_title"] ?? node["@_text"] ?? "").trim();
+
+    if (xmlUrl) {
+      out.push({ url: xmlUrl, title: name || xmlUrl, folder });
+    } else {
+      collectFeeds(node.outline, name ? name.slice(0, 100) : folder, out);
+    }
+  }
+}
+
+export async function importOpml(
+  _prev: ImportState,
+  formData: FormData
+): Promise<ImportState> {
+  const user = await requireUser();
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { error: "Choisis un fichier OPML." };
+  }
+  if (file.size > 1024 * 1024) {
+    return { error: "Fichier trop gros (1 Mo maximum)." };
+  }
+
+  const found: OpmlFeed[] = [];
+  try {
+    const doc = xmlParser.parse(await file.text());
+    collectFeeds(doc?.opml?.body?.outline, null, found);
+  } catch {
+    return { error: "Ce fichier n'est pas un OPML valide." };
+  }
+  if (found.length === 0) return { error: "Aucun flux trouvé dans ce fichier." };
+
+  // Doublons retirés, 150 flux maximum
+  const unique = Array.from(new Map(found.map((f) => [f.url, f])).values()).slice(0, 150);
+
+  // Filtre de sécurité : seules les adresses publiques passent (par lots de 10)
+  const valid: OpmlFeed[] = [];
+  for (let i = 0; i < unique.length; i += 10) {
+    const batch = unique.slice(i, i + 10);
+    const results = await Promise.allSettled(batch.map((f) => assertPublicUrl(f.url)));
+    results.forEach((r, idx) => {
+      if (r.status === "fulfilled") valid.push(batch[idx]);
+    });
+  }
+  const skipped = unique.length - valid.length;
+
+  // Les dossiers (50 maximum)
+  const folderNames = Array.from(
+    new Set(valid.map((f) => f.folder).filter((n): n is string => !!n))
+  ).slice(0, 50);
+  const folderIds = new Map<string, string>();
+  for (const name of folderNames) {
+    const folder = await prisma.folder.upsert({
+      where: { userId_name: { userId: user.id, name } },
+      update: {},
+      create: { userId: user.id, name },
+    });
+    folderIds.set(name, folder.id);
+  }
+
+  const maxSubs = Number(process.env.MAX_SUBSCRIPTIONS) || 200;
+  let room =
+    maxSubs - (await prisma.subscription.count({ where: { userId: user.id } }));
+  let limitReached = false;
+
+  // Les abonnements
+  let added = 0;
+  let already = 0;
+  for (const f of valid) {
+    const feed = await prisma.feed.upsert({
+      where: { url: f.url },
+      update: {},
+      create: { url: f.url, title: f.title.slice(0, 200) },
+    });
+
+    const existing = await prisma.subscription.findUnique({
+      where: { userId_feedId: { userId: user.id, feedId: feed.id } },
+    });
+    if (existing) {
+      already++;
+      continue;
+    }
+
+    if (room <= 0) {
+    limitReached = true;
+    break;
+    }
+
+    await prisma.subscription.create({
+      data: {
+        userId: user.id,
+        feedId: feed.id,
+        folderId: f.folder ? (folderIds.get(f.folder) ?? null) : null,
+      },
+    });
+    added++;
+    room--;
+  }
+
+  revalidatePath("/dashboard");
+  const more =
+    found.length > 150
+      ? " (150 flux maximum par import)"
+      : limitReached
+        ? ` (limite de ${maxSubs} abonnements atteinte)`
+        : "";
+  return {
+    success: `${added} flux ajoutés, ${already} déjà présents, ${skipped} ignorés (adresse invalide ou non autorisée).${more} Va sur « Mes articles » et clique sur « Actualiser » pour récupérer leurs articles.`,
+  };
 }

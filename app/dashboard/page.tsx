@@ -12,6 +12,8 @@ import {
   removeSubscription,
 } from "./actions";
 
+import ImportOpmlForm from "./import-opml-form";
+
 type FolderOption = { id: string; name: string };
 type Sub = {
   id: string;
@@ -111,6 +113,17 @@ async function Dashboard() {
           />
           <button className="rounded bg-blue-600 px-3 text-white">Créer</button>
         </form>
+      </section>
+
+      <section className="mb-8">
+        <h2 className="mb-2 text-lg font-semibold">Importer / exporter</h2>
+        <ImportOpmlForm />
+        <a
+            href="/api/opml/export"
+            className="mt-3 inline-block text-sm underline"
+          >
+            Exporter mes abonnements (fichier OPML)
+          </a>
       </section>
 
       {folders.map((folder) => (

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head><title>Test</title></head>
+  <body>
+    <outline text="Tech">
+      <outline type="rss" text="Numerama" xmlUrl="https://www.numerama.com/feed/"/>
+      <outline type="rss" text="Korben" xmlUrl="https://korben.info/feed"/>
+    </outline>
+    <outline text="Actu">
+      <outline type="rss" text="The Verge" xmlUrl="https://www.theverge.com/rss/index.xml"/>
+    </outline>
+    <outline type="rss" text="Piège" xmlUrl="http://localhost:3000/secret"/>
+  </body>
+</opml>
