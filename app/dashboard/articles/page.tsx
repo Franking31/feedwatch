@@ -3,6 +3,7 @@ import Link from "next/link";
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
+import { Highlight } from "@/lib/highlight";
 import {
   refreshMyFeeds,
   addKeyword,
@@ -13,7 +14,13 @@ import {
 } from "../actions";
 
 type View = "all" | "unread" | "starred";
-type Params = { folder?: string; q?: string; all?: string; view?: string; limit?: string };
+type Params = {
+  folder?: string;
+  q?: string;
+  all?: string;
+  view?: string;
+  limit?: string;
+};
 
 // Construit une adresse en gardant seulement les paramètres utiles
 function href(params: Record<string, string | undefined>) {
@@ -35,9 +42,40 @@ function textMatch(word: string): Prisma.ArticleWhereInput {
   };
 }
 
+const chip = (active: boolean) =>
+  `rounded-full border px-3 py-1 ${
+    active
+      ? "border-accent bg-accent-soft text-accent"
+      : "border-line text-muted hover:text-ink"
+  }`;
+
+function StarIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      aria-hidden="true"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinejoin="round"
+    >
+      <path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9 6.8 19.6l1-5.8L3.5 9.7l5.9-.9L12 3.5z" />
+    </svg>
+  );
+}
+
 async function Articles({ searchParams }: { searchParams: Promise<Params> }) {
   const user = await requireUser();
-  const { folder, q: rawQ, all, view: rawView, limit: rawLimit } = await searchParams;
+  const {
+    folder,
+    q: rawQ,
+    all,
+    view: rawView,
+    limit: rawLimit,
+  } = await searchParams;
+
   const q = rawQ?.trim().slice(0, 100) || undefined;
   const useFilters = all !== "1";
   const view: View =
@@ -98,48 +136,73 @@ async function Articles({ searchParams }: { searchParams: Promise<Params> }) {
           return !excludes.some((k) => text.includes(k.word));
         })
       : fetched;
-  const shown = Math.min(200, Math.max(50, Math.round((Number(rawLimit) || 50) / 50) * 50));
+
+  const shown = Math.min(
+    200,
+    Math.max(50, Math.round((Number(rawLimit) || 50) / 50) * 50)
+  );
   const articles = kept.slice(0, shown);
   const hasMore = kept.length > shown;
   const hasRules = keywords.length > 0;
 
+  // Les mots à surligner : tes mots-clés à garder et ta recherche
+  const highlightWords = [
+    ...(useFilters ? includes.map((k) => k.word) : []),
+    ...(q ? [q] : []),
+  ];
+
   const tabs = [
     { key: "all", label: "Tout", param: undefined },
     { key: "unread", label: "Non lus", param: "unread" },
-    { key: "starred", label: "Favoris ★", param: "starred" },
+    { key: "starred", label: "Favoris", param: "starred" },
   ] as const;
+
+  const emptyMessage =
+    view === "unread"
+      ? "Tout est lu."
+      : view === "starred"
+        ? "Aucun favori. Clique sur « Favori » sous un article pour le retrouver ici."
+        : hasRules && useFilters
+          ? "Aucun article ne correspond à tes filtres. Choisis « Ignorer mes filtres » pour voir ce qui est masqué."
+          : "Aucun article pour l'instant. Ajoute un flux dans « Flux et dossiers », puis clique sur Actualiser.";
 
   return (
     <>
       {/* Recherche */}
-      <form action="/dashboard/articles" method="get" className="mb-4 flex gap-2">
+      <form action="/dashboard/articles" method="get" className="mb-5 flex gap-2">
         {folder && <input type="hidden" name="folder" value={folder} />}
         {!useFilters && <input type="hidden" name="all" value="1" />}
         {viewParam && <input type="hidden" name="view" value={viewParam} />}
         <input
           name="q"
           defaultValue={q ?? ""}
-          placeholder="Rechercher dans les articles..."
-          className="flex-1 rounded border p-2"
+          placeholder="Rechercher dans les articles"
+          aria-label="Rechercher dans les articles"
+          className="field"
         />
-        <button className="rounded border px-3">Chercher</button>
+        <button className="btn">Chercher</button>
         {q && (
           <Link
             href={href({ folder, all, view: viewParam })}
-            className="flex items-center px-2 text-sm underline"
+            className="btn btn-quiet"
           >
             Effacer
           </Link>
         )}
       </form>
 
-      {/* Vues : tout / non lus / favoris */}
-      <nav className="mb-3 flex gap-3 text-sm">
+      {/* Vues */}
+      <nav aria-label="Vue" className="flex gap-6 border-b border-line text-sm">
         {tabs.map((t) => (
           <Link
             key={t.key}
             href={href({ folder, q, all, view: t.param })}
-            className={view === t.key ? "font-bold underline" : ""}
+            aria-current={view === t.key ? "page" : undefined}
+            className={`-mb-px border-b-2 pb-2 font-medium ${
+              view === t.key
+                ? "border-accent text-ink"
+                : "border-transparent text-muted hover:text-ink"
+            }`}
           >
             {t.label}
           </Link>
@@ -147,56 +210,59 @@ async function Articles({ searchParams }: { searchParams: Promise<Params> }) {
       </nav>
 
       {/* Dossiers */}
-      <nav className="mb-4 flex flex-wrap gap-3 text-sm text-gray-500">
-        <Link
-          href={href({ q, all, view: viewParam })}
-          className={!folder ? "font-bold underline" : ""}
-        >
-          Tous les dossiers
-        </Link>
-        {folders.map((f) => (
-          <Link
-            key={f.id}
-            href={href({ folder: f.id, q, all, view: viewParam })}
-            className={folder === f.id ? "font-bold underline" : ""}
-          >
-            {f.name}
+      {folders.length > 0 && (
+        <nav aria-label="Dossiers" className="mt-4 flex flex-wrap gap-2 text-sm">
+          <Link href={href({ q, all, view: viewParam })} className={chip(!folder)}>
+            Tous les dossiers
           </Link>
-        ))}
-      </nav>
+          {folders.map((f) => (
+            <Link
+              key={f.id}
+              href={href({ folder: f.id, q, all, view: viewParam })}
+              className={chip(folder === f.id)}
+            >
+              {f.name}
+            </Link>
+          ))}
+        </nav>
+      )}
 
       {/* Mes filtres */}
-      <details className="mb-6 rounded border p-3" open={hasRules ? undefined : true}>
-        <summary className="cursor-pointer font-semibold">
-          Mes filtres{" "}
-          <span className="text-sm font-normal text-gray-500">
-            ({includes.length} à garder, {excludes.length} à exclure)
+      <details
+        className="mt-5 rounded-md border border-line bg-surface p-4"
+        open={hasRules ? undefined : true}
+      >
+        <summary className="cursor-pointer text-sm font-semibold">
+          Mes filtres
+          <span className="ml-2 font-normal text-muted">
+            {includes.length} à garder, {excludes.length} à exclure
           </span>
         </summary>
 
-        <div className="mt-3 flex flex-col gap-3">
-          <form action={addKeyword} className="flex gap-2">
+        <div className="mt-4 flex flex-col gap-4">
+          <form action={addKeyword} className="flex flex-wrap gap-2">
             <input
               name="word"
               placeholder="Un mot ou une expression"
-              className="flex-1 rounded border p-2"
+              aria-label="Mot-clé"
+              className="field min-w-0 flex-1"
               required
             />
-            <select name="type" className="rounded border p-2">
+            <select name="type" aria-label="Type de filtre" className="field w-auto">
               <option value="INCLUDE">Garder</option>
               <option value="EXCLUDE">Exclure</option>
             </select>
-            <button className="rounded bg-blue-600 px-3 text-white">Ajouter</button>
+            <button className="btn btn-primary">Ajouter</button>
           </form>
 
           {[
-            { title: "À garder", list: includes },
-            { title: "À exclure", list: excludes },
-          ].map(({ title, list }) => (
+            { title: "À garder", list: includes, kind: "include" },
+            { title: "À exclure", list: excludes, kind: "exclude" },
+          ].map(({ title, list, kind }) => (
             <div key={title}>
-              <p className="mb-1 text-sm text-gray-500">{title}</p>
+              <p className="mb-2 text-sm text-muted">{title}</p>
               {list.length === 0 ? (
-                <p className="text-sm text-gray-500">Aucun.</p>
+                <p className="text-sm text-muted">Aucun mot pour l'instant.</p>
               ) : (
                 <ul className="flex flex-wrap gap-2">
                   {list.map((k) => (
@@ -204,8 +270,12 @@ async function Articles({ searchParams }: { searchParams: Promise<Params> }) {
                       <form action={deleteKeyword}>
                         <input type="hidden" name="id" value={k.id} />
                         <button
-                          title="Supprimer"
-                          className="rounded-full border px-3 py-1 text-sm"
+                          aria-label={`Supprimer le mot ${k.word}`}
+                          className={`rounded-full border px-3 py-1 text-sm ${
+                            kind === "include"
+                              ? "border-transparent bg-accent-soft text-accent"
+                              : "border-dashed border-line text-muted line-through"
+                          }`}
                         >
                           {k.word} ✕
                         </button>
@@ -225,19 +295,19 @@ async function Articles({ searchParams }: { searchParams: Promise<Params> }) {
                 view: viewParam,
                 all: useFilters ? "1" : undefined,
               })}
-              className="text-sm underline"
+              className="self-start text-sm text-muted underline underline-offset-4 hover:text-ink"
             >
-              {useFilters ? "Voir tout (ignorer mes filtres)" : "Réactiver mes filtres"}
+              {useFilters ? "Ignorer mes filtres" : "Réactiver mes filtres"}
             </Link>
           )}
         </div>
       </details>
 
       {/* Résultats */}
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm text-gray-500">
+      <div className="mb-1 mt-6 flex items-center justify-between">
+        <p className="text-sm text-muted">
           {articles.length} article{articles.length > 1 ? "s" : ""}
-          {hasRules && !useFilters ? " (filtres ignorés)" : ""}
+          {hasRules && !useFilters ? ", filtres ignorés" : ""}
         </p>
 
         {articles.length > 0 && view !== "starred" && (
@@ -245,60 +315,82 @@ async function Articles({ searchParams }: { searchParams: Promise<Params> }) {
             {articles.map((a) => (
               <input key={a.id} type="hidden" name="ids" value={a.id} />
             ))}
-            <button className="rounded border px-2 py-1 text-sm">
-              Tout marquer comme lu
-            </button>
+            <button className="btn btn-quiet text-xs">Tout marquer comme lu</button>
           </form>
         )}
       </div>
 
       {articles.length === 0 ? (
-        <p className="text-gray-500">
-          {view === "unread"
-            ? "Tout est lu, bravo !"
-            : view === "starred"
-              ? "Aucun favori pour l'instant."
-              : "Aucun article ne correspond. Essaie « Voir tout », ou clique sur « Actualiser »."}
-        </p>
+        <p className="border-t border-line py-8 text-muted">{emptyMessage}</p>
       ) : (
-        <ul className="flex flex-col gap-4">
+        <ul>
           {articles.map((a) => {
             const state = a.states[0];
             const isRead = state?.isRead ?? false;
             const isStarred = state?.isStarred ?? false;
 
             return (
-              <li key={a.id} className={isRead ? "opacity-60" : ""}>
+              <li key={a.id} className="relative border-t border-line py-4 pl-4">
+                {/* La barre cobalt signale un article non lu */}
+                <span
+                  aria-hidden="true"
+                  className={`absolute bottom-4 left-0 top-4 w-[3px] rounded-full ${
+                    isRead ? "bg-transparent" : "bg-accent"
+                  }`}
+                />
+
+                <div className="flex items-baseline justify-between gap-3 text-sm">
+                  <span className="flex items-center gap-1.5 font-semibold">
+                    {isStarred && (
+                      <span className="text-accent">
+                        <StarIcon filled />
+                      </span>
+                    )}
+                    {a.feed.title}
+                  </span>
+                  {a.publishedAt && (
+                    <time dateTime={a.publishedAt.toISOString()} className="text-muted">
+                      {a.publishedAt.toLocaleDateString("fr-FR", {
+                        day: "numeric",
+                        month: "short",
+                        timeZone: "Europe/Paris",
+                      })}
+                    </time>
+                  )}
+                </div>
+
                 <a
                   href={a.link}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className={`underline ${isRead ? "" : "font-semibold"}`}
+                  className={`mt-0.5 block text-[1.0625rem] leading-snug hover:underline ${
+                    isRead ? "font-medium text-muted" : "font-semibold text-ink"
+                  }`}
                 >
-                  {isStarred && "★ "}
-                  {a.title}
+                  <Highlight text={a.title} words={highlightWords} />
+                  <span className="sr-only"> (s'ouvre dans un nouvel onglet)</span>
                 </a>
-                <p className="text-xs text-gray-500">
-                  {a.feed.title}
-                  {a.publishedAt
-                    ? ` · ${a.publishedAt.toLocaleDateString("fr-FR")}`
-                    : ""}
-                </p>
-                {a.summary && <p className="text-sm">{a.summary}</p>}
 
-                <div className="mt-1 flex gap-2 text-xs">
+                {a.summary && (
+                  <p className="mt-1 line-clamp-2 text-sm text-muted">
+                    <Highlight text={a.summary} words={highlightWords} />
+                  </p>
+                )}
+
+                <div className="-ml-2 mt-2 flex gap-1">
                   <form action={setRead}>
                     <input type="hidden" name="articleId" value={a.id} />
                     <input type="hidden" name="value" value={isRead ? "0" : "1"} />
-                    <button className="rounded border px-2 py-0.5">
+                    <button className="btn btn-quiet text-xs">
                       {isRead ? "Marquer non lu" : "Marquer lu"}
                     </button>
                   </form>
                   <form action={setStarred}>
                     <input type="hidden" name="articleId" value={a.id} />
                     <input type="hidden" name="value" value={isStarred ? "0" : "1"} />
-                    <button className="rounded border px-2 py-0.5">
-                      {isStarred ? "★ Retirer des favoris" : "☆ Favori"}
+                    <button className="btn btn-quiet text-xs">
+                      <StarIcon filled={isStarred} />
+                      {isStarred ? "Retirer des favoris" : "Favori"}
                     </button>
                   </form>
                 </div>
@@ -307,6 +399,7 @@ async function Articles({ searchParams }: { searchParams: Promise<Params> }) {
           })}
         </ul>
       )}
+
       {hasMore && (
         <Link
           href={href({
@@ -316,7 +409,7 @@ async function Articles({ searchParams }: { searchParams: Promise<Params> }) {
             view: viewParam,
             limit: String(shown + 50),
           })}
-          className="mt-4 inline-block rounded border px-3 py-2 text-sm"
+          className="btn mt-4"
         >
           Voir plus d'articles
         </Link>
@@ -331,24 +424,17 @@ export default function ArticlesPage({
   searchParams: Promise<Params>;
 }) {
   return (
-    <main className="mx-auto my-10 max-w-2xl p-4">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <Link href="/dashboard" className="text-sm underline">
-            ← Retour
-          </Link>
-          <h1 className="text-2xl font-bold">Mes articles</h1>
-        </div>
+    <div>
+      <header className="mb-6 flex items-end justify-between gap-4">
+        <h1 className="text-3xl font-bold tracking-tight">Articles</h1>
         <form action={refreshMyFeeds}>
-          <button className="rounded bg-blue-600 px-3 py-2 text-white">
-            Actualiser
-          </button>
+          <button className="btn btn-primary">Actualiser</button>
         </form>
-      </div>
+      </header>
 
-      <Suspense fallback={<p>Chargement...</p>}>
+      <Suspense fallback={<p className="text-muted">Chargement des articles...</p>}>
         <Articles searchParams={searchParams} />
       </Suspense>
-    </main>
+    </div>
   );
 }

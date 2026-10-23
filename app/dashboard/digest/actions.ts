@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { generateDigest, isDigestStyle } from "@/lib/digest";
+import { redirect } from "next/navigation";
 
 type GenState = { error?: string } | null;
 
@@ -43,6 +44,7 @@ export async function saveDigestSettings(formData: FormData) {
     create: { userId: user.id, ...data },
   });
   revalidatePath("/dashboard/digest");
+  redirect("/dashboard/digest?saved=1");
 }
 
 // "Générer maintenant" : limité à 3 par 24 h pour protéger ta facture

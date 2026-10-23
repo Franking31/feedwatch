@@ -8,7 +8,7 @@ export default function SignOutButton() {
 
   return (
     <button
-      className="rounded bg-black p-2 text-white"
+      className="btn btn-quiet"
       onClick={async () => {
         await signOut();
         router.push("/login");

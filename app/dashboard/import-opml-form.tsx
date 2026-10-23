@@ -7,22 +7,32 @@ export default function ImportOpmlForm() {
   const [state, formAction, pending] = useActionState(importOpml, null);
 
   return (
-    <form action={formAction} className="flex flex-col gap-2">
-      <input
-        type="file"
-        name="file"
-        accept=".opml,.xml,text/xml,application/xml"
-        className="rounded border p-2"
-        required
-      />
-      <button
-        disabled={pending}
-        className="self-start rounded bg-blue-600 px-3 py-2 text-white disabled:opacity-50"
-      >
-        {pending ? "Import en cours..." : "Importer un fichier OPML"}
+    <form action={formAction} className="flex flex-col gap-3">
+      <label className="flex flex-col gap-1 text-sm font-medium">
+        Fichier OPML (exporté depuis un autre lecteur RSS)
+        <input
+          type="file"
+          name="file"
+          accept=".opml,.xml,text/xml,application/xml"
+          className="field"
+          required
+        />
+      </label>
+
+      <button disabled={pending} className="btn self-start">
+        {pending ? "Import en cours..." : "Importer"}
       </button>
-      {state?.error && <p className="text-red-500">{state.error}</p>}
-      {state?.success && <p className="text-green-500">{state.success}</p>}
+
+      {state?.error && (
+        <p role="alert" className="text-sm text-danger">
+          {state.error}
+        </p>
+      )}
+      {state?.success && (
+        <p role="status" className="text-sm text-ok">
+          {state.success}
+        </p>
+      )}
     </form>
   );
 }

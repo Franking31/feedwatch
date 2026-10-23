@@ -1,10 +1,11 @@
-import { Suspense } from "react";
-import Link from "next/link";
+import { Fragment, Suspense } from "react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { DIGEST_STYLES } from "@/lib/digest";
 import { saveDigestSettings, deleteDigest } from "./actions";
 import GenerateButton from "./generate-button";
+import SubmitButton from "../submit-button";
+import ConfirmButton from "../confirm-button";
 
 const DAYS = [
   { value: 1, label: "Lundi" },
@@ -26,6 +27,35 @@ const fmt = (d: Date) =>
     timeZone: "Europe/Paris",
   });
 
+// Le texte du digest : chaque référence [3] devient un lien vers l'article cité
+function DigestText({ content, sources }: { content: string; sources: Source[] }) {
+  const parts = content.split(/\[(\d{1,3})\]/g);
+
+  return (
+    <p className="whitespace-pre-wrap text-[1.0625rem] leading-relaxed">
+      {parts.map((part, i) => {
+        if (i % 2 === 0) return <Fragment key={i}>{part}</Fragment>;
+
+        const source = sources.find((s) => s.n === Number(part));
+        if (!source) return <Fragment key={i}>[{part}]</Fragment>;
+
+        return (
+          <a
+            key={i}
+            href={source.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={source.title}
+            className="text-sm font-medium text-accent hover:underline"
+          >
+            [{part}]
+          </a>
+        );
+      })}
+    </p>
+  );
+}
+
 function DigestView({
   digest,
 }: {
@@ -36,52 +66,63 @@ function DigestView({
     articleCount: number;
     periodStart: Date;
     periodEnd: Date;
-    createdAt: Date;
   };
 }) {
   const sources = digest.sources as Source[];
 
   return (
     <div>
-      <p className="mb-2 text-xs text-gray-500">
-        Du {fmt(digest.periodStart)} au {fmt(digest.periodEnd)} · {digest.articleCount}{" "}
-        articles
+      <p className="mb-4 text-sm text-muted">
+        Du {fmt(digest.periodStart)} au {fmt(digest.periodEnd)}, {digest.articleCount}{" "}
+        article{digest.articleCount > 1 ? "s" : ""}
       </p>
 
-      <p className="whitespace-pre-wrap">{digest.content}</p>
+      <div className="max-w-prose">
+        <DigestText content={digest.content} sources={sources} />
+      </div>
 
-      <details className="mt-3 text-sm">
-        <summary className="cursor-pointer text-gray-500">Sources</summary>
-        <ol className="mt-2 flex flex-col gap-1">
+      <details className="mt-6 text-sm">
+        <summary className="cursor-pointer font-medium">
+          Sources ({sources.length})
+        </summary>
+        <ol className="mt-3 flex flex-col gap-1.5">
           {sources.map((s) => (
             <li key={s.n}>
-              [{s.n}]{" "}
+              <span className="text-muted">[{s.n}]</span>{" "}
               <a
                 href={s.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="underline"
+                className="hover:underline"
               >
                 {s.title}
               </a>{" "}
-              <span className="text-gray-500">— {s.feed}</span>
+              <span className="text-muted">{s.feed}</span>
             </li>
           ))}
         </ol>
       </details>
 
-      <form action={deleteDigest} className="mt-3">
+      <form action={deleteDigest} className="mt-4">
         <input type="hidden" name="id" value={digest.id} />
-        <button className="rounded border px-2 py-0.5 text-xs text-red-500">
+        <ConfirmButton
+          message="Supprimer ce digest ?"
+          className="btn btn-quiet btn-danger text-xs"
+        >
           Supprimer ce digest
-        </button>
+        </ConfirmButton>
       </form>
     </div>
   );
 }
 
-async function DigestPage() {
+async function DigestPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ saved?: string }>;
+}) {
   const user = await requireUser();
+  const { saved } = await searchParams;
 
   const [settings, digests] = await Promise.all([
     prisma.digestSettings.findUnique({ where: { userId: user.id } }),
@@ -97,44 +138,54 @@ async function DigestPage() {
 
   return (
     <>
-      <section className="mb-8">
-        <GenerateButton />
-        {!latest && (
-          <p className="mt-3 text-sm text-gray-500">
-            Pas encore de digest. Clique sur « Générer maintenant » pour tester.
-          </p>
-        )}
-      </section>
-
-      {latest && (
-        <section className="mb-8 rounded border p-4">
-          <h2 className="mb-2 text-lg font-semibold">
-            Dernier digest · {fmt(latest.createdAt)}
+      {latest ? (
+        <section aria-labelledby="latest-title">
+          <h2 id="latest-title" className="mb-4 text-lg font-semibold">
+            Dernier digest, {fmt(latest.createdAt)}
           </h2>
           <DigestView digest={latest} />
         </section>
+      ) : (
+        <p className="text-muted">
+          Pas encore de digest. Clique sur « Générer maintenant » pour voir à quoi
+          il ressemble.
+        </p>
       )}
 
-      <section className="mb-8">
-        <h2 className="mb-2 text-lg font-semibold">Mes réglages</h2>
-        <form action={saveDigestSettings} className="flex flex-col gap-4 rounded border p-4">
-          <label className="flex items-center gap-2">
-            <input type="checkbox" name="enabled" defaultChecked={settings?.enabled ?? false} />
-            Générer mon digest automatiquement
-          </label>
+      <section className="mt-12 border-t border-line pt-8" aria-labelledby="settings-title">
+        <h2 id="settings-title" className="mb-4 text-lg font-semibold">
+          Réglages
+        </h2>
+
+        <form action={saveDigestSettings} className="flex max-w-xl flex-col gap-6">
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                name="enabled"
+                defaultChecked={settings?.enabled ?? false}
+                className="h-4 w-4 accent-accent"
+              />
+              Générer mon digest automatiquement
+            </label>
+            <p className="ml-6 mt-1 text-sm text-muted">
+              Il est prêt chaque matin vers 7 h, les jours cochés ci-dessous.
+            </p>
+          </div>
 
           <fieldset>
-            <legend className="mb-1 text-sm text-gray-500">
+            <legend className="mb-2 text-sm font-medium">
               Jours (3 maximum, dimanche par défaut)
             </legend>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-x-5 gap-y-2">
               {DAYS.map((d) => (
-                <label key={d.value} className="flex items-center gap-1 text-sm">
+                <label key={d.value} className="flex items-center gap-1.5 text-sm">
                   <input
                     type="checkbox"
                     name="days"
                     value={d.value}
                     defaultChecked={days.includes(d.value)}
+                    className="h-4 w-4 accent-accent"
                   />
                   {d.label}
                 </label>
@@ -142,12 +193,12 @@ async function DigestPage() {
             </div>
           </fieldset>
 
-          <label className="flex flex-col gap-1 text-sm">
+          <label className="flex flex-col gap-1 text-sm font-medium">
             Format
             <select
               name="style"
               defaultValue={settings?.style ?? "themes"}
-              className="rounded border p-2"
+              className="field"
             >
               {Object.entries(DIGEST_STYLES).map(([key, s]) => (
                 <option key={key} value={key}>
@@ -157,74 +208,94 @@ async function DigestPage() {
             </select>
           </label>
 
-          <label className="flex flex-col gap-1 text-sm">
-            Nombre d'articles maximum (5 à 50)
+          <label className="flex flex-col gap-1 text-sm font-medium">
+            Nombre d'articles maximum
             <input
               type="number"
               name="maxArticles"
               min={5}
               max={50}
               defaultValue={settings?.maxArticles ?? 30}
-              className="rounded border p-2"
+              className="field"
             />
+            <span className="text-xs font-normal text-muted">Entre 5 et 50.</span>
           </label>
 
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 text-sm font-medium">
             <input
               type="checkbox"
               name="useFilters"
               defaultChecked={settings?.useFilters ?? true}
+              className="h-4 w-4 accent-accent"
             />
-            Utiliser mes filtres de mots-clés (garder / exclure)
+            Utiliser mes filtres de mots-clés (garder et exclure)
           </label>
 
-          <label className="flex flex-col gap-1 text-sm">
-            Mes consignes pour l'IA (facultatif, 1000 caractères max)
+          <label className="flex flex-col gap-1 text-sm font-medium">
+            Mes consignes pour l'IA (facultatif)
             <textarea
               name="instructions"
               rows={4}
               maxLength={1000}
               defaultValue={settings?.instructions ?? ""}
-              placeholder="Ex : Parle-moi comme à un étudiant en génie logiciel. Mets en avant l'impact sur les développeurs. Ton direct, pas de blabla."
-              className="rounded border p-2"
+              placeholder="Par exemple : parle-moi comme à un étudiant en génie logiciel, mets en avant l'impact sur les développeurs, ton direct."
+              className="field"
             />
+            <span className="text-xs font-normal text-muted">1000 caractères maximum.</span>
           </label>
 
-          <button className="self-start rounded bg-blue-600 px-3 py-2 text-white">
-            Enregistrer
-          </button>
+          <div className="flex items-center gap-4">
+            <SubmitButton className="btn btn-primary" pendingLabel="Enregistrement...">
+              Enregistrer les réglages
+            </SubmitButton>
+            {saved === "1" && (
+              <p role="status" className="text-sm text-ok">
+                Réglages enregistrés.
+              </p>
+            )}
+          </div>
         </form>
       </section>
 
       {older.length > 0 && (
-        <section>
-          <h2 className="mb-2 text-lg font-semibold">Anciens digests</h2>
-          <div className="flex flex-col gap-2">
-            {older.map((d) => (
-              <details key={d.id} className="rounded border p-3">
-                <summary className="cursor-pointer">{fmt(d.createdAt)}</summary>
-                <div className="mt-3">
-                  <DigestView digest={d} />
-                </div>
-              </details>
-            ))}
-          </div>
+        <section className="mt-12 border-t border-line pt-8" aria-labelledby="older-title">
+          <h2 id="older-title" className="mb-2 text-lg font-semibold">
+            Anciens digests
+          </h2>
+          {older.map((d) => (
+            <details key={d.id} className="border-t border-line py-3">
+              <summary className="cursor-pointer font-medium">{fmt(d.createdAt)}</summary>
+              <div className="mt-4">
+                <DigestView digest={d} />
+              </div>
+            </details>
+          ))}
         </section>
       )}
     </>
   );
 }
 
-export default function Page() {
+export default function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ saved?: string }>;
+}) {
   return (
-    <main className="mx-auto my-10 max-w-2xl p-4">
-      <Link href="/dashboard" className="text-sm underline">
-        ← Retour
-      </Link>
-      <h1 className="mb-6 text-2xl font-bold">Mon digest</h1>
-      <Suspense fallback={<p>Chargement...</p>}>
-        <DigestPage />
+    <div>
+      <header className="mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Digest</h1>
+          <p className="mt-1 max-w-md text-sm text-muted">
+            Une synthèse de tes nouveaux articles, rédigée par l'IA.
+          </p>
+        </div>
+        <GenerateButton />
+      </header>
+
+      <Suspense fallback={<p className="text-muted">Chargement...</p>}>
+        <DigestPage searchParams={searchParams} />
       </Suspense>
-    </main>
+    </div>
   );
 }

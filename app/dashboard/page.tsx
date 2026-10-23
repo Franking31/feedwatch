@@ -1,18 +1,17 @@
 import { Suspense } from "react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
-import SignOutButton from "./sign-out-button";
 import AddFeedForm from "./add-feed-form";
-import Link from "next/link";
+import ImportOpmlForm from "./import-opml-form";
+import MoveSelect from "./move-select";
+import ConfirmButton from "./confirm-button";
+import SubmitButton from "./submit-button";
 import {
   createFolder,
   renameFolder,
   deleteFolder,
-  moveSubscription,
   removeSubscription,
 } from "./actions";
-
-import ImportOpmlForm from "./import-opml-form";
 
 type FolderOption = { id: string; name: string };
 type Sub = {
@@ -24,34 +23,22 @@ type Sub = {
 // Une ligne = un abonnement
 function SubscriptionRow({ sub, folders }: { sub: Sub; folders: FolderOption[] }) {
   return (
-    <li className="flex flex-wrap items-center gap-2 py-1">
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line py-3">
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium">{sub.feed.title}</p>
-        <p className="truncate text-xs text-gray-500">{sub.feed.url}</p>
+        <p className="truncate text-xs text-muted">{sub.feed.url}</p>
       </div>
 
-      <form action={moveSubscription} className="flex gap-1">
-        <input type="hidden" name="subscriptionId" value={sub.id} />
-        <select
-          name="folderId"
-          defaultValue={sub.folderId ?? ""}
-          className="rounded border p-1 text-sm"
-        >
-          <option value="">Sans dossier</option>
-          {folders.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.name}
-            </option>
-          ))}
-        </select>
-        <button className="rounded border px-2 text-sm">Déplacer</button>
-      </form>
+      <MoveSelect subscriptionId={sub.id} folderId={sub.folderId} folders={folders} />
 
       <form action={removeSubscription}>
         <input type="hidden" name="subscriptionId" value={sub.id} />
-        <button className="rounded border px-2 text-sm text-red-500">
+        <ConfirmButton
+          message={`Te désabonner de « ${sub.feed.title} » ?`}
+          className="btn btn-quiet btn-danger text-xs"
+        >
           Se désabonner
-        </button>
+        </ConfirmButton>
       </form>
     </li>
   );
@@ -74,102 +61,114 @@ async function Dashboard() {
   ]);
 
   const folderOptions = folders.map((f) => ({ id: f.id, name: f.name }));
+  const total =
+    folders.reduce((n, f) => n + f.subscriptions.length, 0) + unfiled.length;
 
   return (
     <>
-      <header className="mb-8 flex items-center justify-between">
-        <Link
-            href="/dashboard/articles"
-            className="mb-8 inline-block rounded bg-blue-600 px-3 py-2 text-white"
-          >
-            Voir mes articles →
-          </Link>
-          <Link
-              href="/dashboard/digest"
-              className="mb-8 ml-2 inline-block rounded border px-3 py-2"
-            >
-              Mon digest hebdo →
-          </Link>
-        <div>
-          <h1 className="text-2xl font-bold">Bienvenue {user.name}</h1>
-          <p className="text-sm text-gray-500">{user.email}</p>
-        </div>
-        <SignOutButton />
-      </header>
-
-      <section className="mb-8">
-        <h2 className="mb-2 text-lg font-semibold">Ajouter un flux</h2>
+      <section aria-labelledby="add-title">
+        <h2 id="add-title" className="mb-4 text-lg font-semibold">
+          Ajouter un flux
+        </h2>
         <AddFeedForm folders={folderOptions} />
       </section>
 
-      <section className="mb-8">
-        <h2 className="mb-2 text-lg font-semibold">Nouveau dossier</h2>
-        <form action={createFolder} className="flex gap-2">
-          <input
-            name="name"
-            placeholder="Ex : IA, Jeux vidéo..."
-            className="flex-1 rounded border p-2"
-            required
-          />
-          <button className="rounded bg-blue-600 px-3 text-white">Créer</button>
-        </form>
-      </section>
+      <section className="mt-12 border-t border-line pt-8" aria-labelledby="subs-title">
+        <h2 id="subs-title" className="text-lg font-semibold">
+          Mes abonnements{" "}
+          <span className="font-normal text-muted">{total}</span>
+        </h2>
 
-      <section className="mb-8">
-        <h2 className="mb-2 text-lg font-semibold">Importer / exporter</h2>
-        <ImportOpmlForm />
-        <a
-            href="/api/opml/export"
-            className="mt-3 inline-block text-sm underline"
-          >
-            Exporter mes abonnements (fichier OPML)
-          </a>
-      </section>
+        {total === 0 && folders.length === 0 && (
+          <p className="mt-3 text-muted">
+            Aucun abonnement. Colle l'adresse d'un flux RSS ci-dessus, ou importe
+            un fichier OPML plus bas.
+          </p>
+        )}
 
-      {folders.map((folder) => (
-        <section key={folder.id} className="mb-6 rounded border p-3">
-          <div className="mb-2 flex gap-2">
-            <form action={renameFolder} className="flex flex-1 gap-1">
-              <input type="hidden" name="id" value={folder.id} />
-              <input
-                name="name"
-                defaultValue={folder.name}
-                className="flex-1 rounded border p-1 font-semibold"
-                required
-              />
-              <button className="rounded border px-2 text-sm">Renommer</button>
-            </form>
-            <form action={deleteFolder}>
-              <input type="hidden" name="id" value={folder.id} />
-              <button className="rounded border px-2 text-sm text-red-500">
-                Supprimer
-              </button>
-            </form>
+        {folders.map((folder) => (
+          <div key={folder.id} className="mt-8">
+            <div className="mb-1 flex flex-wrap items-center gap-2">
+              <form action={renameFolder} className="flex min-w-0 flex-1 items-center gap-2">
+                <input type="hidden" name="id" value={folder.id} />
+                <input
+                  name="name"
+                  defaultValue={folder.name}
+                  aria-label="Nom du dossier"
+                  required
+                  className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 py-1 text-base font-semibold hover:border-line focus:border-accent"
+                />
+                <SubmitButton className="btn btn-quiet text-xs" pendingLabel="Renommage...">
+                  Renommer
+                </SubmitButton>
+              </form>
+
+              <form action={deleteFolder}>
+                <input type="hidden" name="id" value={folder.id} />
+                <ConfirmButton
+                  message={`Supprimer le dossier « ${folder.name} » ? Ses flux resteront dans « Sans dossier ».`}
+                  className="btn btn-quiet btn-danger text-xs"
+                >
+                  Supprimer le dossier
+                </ConfirmButton>
+              </form>
+            </div>
+
+            {folder.subscriptions.length === 0 ? (
+              <p className="border-t border-line py-3 text-sm text-muted">
+                Dossier vide. Place-y un flux avec le sélecteur de dossier d'un abonnement.
+              </p>
+            ) : (
+              <ul>
+                {folder.subscriptions.map((sub) => (
+                  <SubscriptionRow key={sub.id} sub={sub} folders={folderOptions} />
+                ))}
+              </ul>
+            )}
           </div>
+        ))}
 
-          {folder.subscriptions.length === 0 ? (
-            <p className="text-sm text-gray-500">Dossier vide.</p>
-          ) : (
+        {unfiled.length > 0 && (
+          <div className="mt-8">
+            <h3 className="mb-1 px-2 font-semibold">Sans dossier</h3>
             <ul>
-              {folder.subscriptions.map((sub) => (
+              {unfiled.map((sub) => (
                 <SubscriptionRow key={sub.id} sub={sub} folders={folderOptions} />
               ))}
             </ul>
-          )}
-        </section>
-      ))}
-
-      <section className="rounded border p-3">
-        <h2 className="mb-2 font-semibold">Sans dossier</h2>
-        {unfiled.length === 0 ? (
-          <p className="text-sm text-gray-500">Rien ici.</p>
-        ) : (
-          <ul>
-            {unfiled.map((sub) => (
-              <SubscriptionRow key={sub.id} sub={sub} folders={folderOptions} />
-            ))}
-          </ul>
+          </div>
         )}
+      </section>
+
+      <section className="mt-12 border-t border-line pt-8" aria-labelledby="folder-title">
+        <h2 id="folder-title" className="mb-4 text-lg font-semibold">
+          Nouveau dossier
+        </h2>
+        <form action={createFolder} className="flex gap-2">
+          <input
+            name="name"
+            placeholder="Par exemple : IA, Jeux vidéo"
+            aria-label="Nom du nouveau dossier"
+            className="field"
+            required
+          />
+          <SubmitButton className="btn btn-primary" pendingLabel="Création...">
+            Créer
+          </SubmitButton>
+        </form>
+      </section>
+
+      <section className="mt-12 border-t border-line pt-8" aria-labelledby="io-title">
+        <h2 id="io-title" className="mb-4 text-lg font-semibold">
+          Importer et exporter
+        </h2>
+        <ImportOpmlForm />
+        <p className="mb-2 mt-8 text-sm text-muted">
+          Pour garder une copie de tes abonnements ou les utiliser dans un autre lecteur :
+        </p>
+        <a href="/api/opml/export" className="btn">
+          Exporter mes abonnements
+        </a>
       </section>
     </>
   );
@@ -177,10 +176,11 @@ async function Dashboard() {
 
 export default function DashboardPage() {
   return (
-    <main className="mx-auto my-10 max-w-2xl p-4">
-      <Suspense fallback={<p>Chargement...</p>}>
+    <div>
+      <h1 className="mb-8 text-3xl font-bold tracking-tight">Flux et dossiers</h1>
+      <Suspense fallback={<p className="text-muted">Chargement...</p>}>
         <Dashboard />
       </Suspense>
-    </main>
+    </div>
   );
 }
