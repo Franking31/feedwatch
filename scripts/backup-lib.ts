@@ -9,7 +9,7 @@ export function env(name: string): string {
 }
 
 export const BUCKET = env("S3_BUCKET");
-export const PREFIX = "feedWatch/";
+export const PREFIX = process.env.BACKUP_PREFIX ?? "feedwatch/";
 
 export const s3 = new S3Client({
     endpoint: env("S3_ENDPOINT"),
