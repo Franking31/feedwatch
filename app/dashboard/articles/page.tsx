@@ -22,6 +22,8 @@ type Params = {
   limit?: string;
 };
 
+export const metadata = { title: "Articles" };
+
 // Construit une adresse en gardant seulement les paramètres utiles
 function href(params: Record<string, string | undefined>) {
   const sp = new URLSearchParams();

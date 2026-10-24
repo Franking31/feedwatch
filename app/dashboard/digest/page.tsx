@@ -29,6 +29,8 @@ const fmt = (d: Date) =>
     timeZone: "Europe/Paris",
   });
 
+export const metadata = { title: "Digest" };
+
 // Le texte du digest : chaque référence [3] devient un lien vers l'article cité
 function DigestText({ content, sources }: { content: string; sources: Source[] }) {
   const parts = content.split(/\[(\d{1,3})\]/g);

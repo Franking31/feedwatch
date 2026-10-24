@@ -9,7 +9,7 @@ const grotesk = Schibsted_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: "Feedwatch",
+  title: { default: "Feedwatch", template: "%s | Feedwatch" },
   description: "Tes sources, tes mots-clés, un digest par semaine.",
 };
 

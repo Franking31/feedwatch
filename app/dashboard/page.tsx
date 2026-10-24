@@ -20,6 +20,8 @@ type Sub = {
   feed: { title: string; url: string };
 };
 
+export const metadata = { title: "Flux et dossiers" };
+
 // Une ligne = un abonnement
 function SubscriptionRow({ sub, folders }: { sub: Sub; folders: FolderOption[] }) {
   return (
