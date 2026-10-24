@@ -157,6 +157,7 @@ model DigestSettings {
   useFilters   Boolean  @default(true)
   instructions String   @default("")
   updatedAt    DateTime @updatedAt
+  emailEnabled Boolean  @default(false)
 }
 
 model Digest {

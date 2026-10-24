@@ -6,6 +6,8 @@ import { saveDigestSettings, deleteDigest } from "./actions";
 import GenerateButton from "./generate-button";
 import SubmitButton from "../submit-button";
 import ConfirmButton from "../confirm-button";
+import EmailButton from "./email-button";
+import { mailConfigured } from "@/lib/mailer";
 
 const DAYS = [
   { value: 1, label: "Lundi" },
@@ -103,15 +105,18 @@ function DigestView({
         </ol>
       </details>
 
-      <form action={deleteDigest} className="mt-4">
-        <input type="hidden" name="id" value={digest.id} />
-        <ConfirmButton
-          message="Supprimer ce digest ?"
-          className="btn btn-quiet btn-danger text-xs"
-        >
-          Supprimer ce digest
-        </ConfirmButton>
-      </form>
+     <div className="mt-6 flex flex-wrap items-center gap-4">
+        <EmailButton digestId={digest.id} />
+        <form action={deleteDigest}>
+          <input type="hidden" name="id" value={digest.id} />
+          <ConfirmButton
+            message="Supprimer ce digest ?"
+            className="btn btn-quiet btn-danger text-xs"
+          >
+            Supprimer ce digest
+          </ConfirmButton>
+        </form>
+      </div>
     </div>
   );
 }
@@ -230,6 +235,22 @@ async function DigestPage({
             />
             Utiliser mes filtres de mots-clés (garder et exclure)
           </label>
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                name="emailEnabled"
+                defaultChecked={settings?.emailEnabled ?? false}
+                className="h-4 w-4 accent-accent"
+              />
+              Recevoir aussi mon digest par email
+            </label>
+            <p className="ml-6 mt-1 text-sm text-muted">
+              {mailConfigured()
+                ? `Envoyé à ${user.email}, en même temps que la génération automatique.`
+                : "L'envoi d'emails n'est pas encore configuré sur ce serveur."}
+            </p>
+          </div>
 
           <label className="flex flex-col gap-1 text-sm font-medium">
             Mes consignes pour l'IA (facultatif)
