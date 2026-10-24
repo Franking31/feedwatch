@@ -5,7 +5,7 @@ const OPENAI_COMPAT = {
   groq: {
     url: "https://api.groq.com/openai/v1/chat/completions",
     keyEnv: "GROQ_API_KEY",
-    defaultModel: "llama-3.3-70b-versatile",
+    defaultModel: "openai/gpt-oss-120b",
   },
   gemini: {
     url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
@@ -15,8 +15,13 @@ const OPENAI_COMPAT = {
 };
 
 export function currentProvider(): Provider {
-  const p = (process.env.LLM_PROVIDER ?? "anthropic").toLowerCase();
-  return p === "groq" || p === "gemini" ? p : "anthropic";
+  const p = (process.env.LLM_PROVIDER ?? "").toLowerCase();
+  if (p === "groq" || p === "gemini" || p === "anthropic") return p;
+
+  // Pas de choix explicite : on prend le premier fournisseur dont la clé existe
+  if (process.env.GROQ_API_KEY) return "groq";
+  if (process.env.GEMINI_API_KEY) return "gemini";
+  return "anthropic";
 }
 
 // Vrai si le fournisseur choisi a sa clé dans .env

@@ -5,8 +5,11 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { generateDigest, isDigestStyle } from "@/lib/digest";
 import { redirect } from "next/navigation";
+import { refreshMany } from "@/lib/feeds";
 
 type GenState = { error?: string } | null;
+
+
 
 export async function saveDigestSettings(formData: FormData) {
   const user = await requireUser();
@@ -37,6 +40,13 @@ export async function saveDigestSettings(formData: FormData) {
     useFilters,
     instructions,
   };
+
+    // On récupère d'abord les derniers articles de tes flux
+  const feeds = await prisma.feed.findMany({
+    where: { subscriptions: { some: { userId: user.id } } },
+    select: { id: true, url: true },
+  });
+  await refreshMany(feeds);
 
   await prisma.digestSettings.upsert({
     where: { userId: user.id },
