@@ -305,7 +305,7 @@ export default function Page({
   searchParams: Promise<{ saved?: string }>;
 }) {
   return (
-    <div>
+    <div className="mx-auto w-full max-w-3x1 px-4 py-8 md:px-10 md:py-12">
       <header className="mb-8 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Digest</h1>

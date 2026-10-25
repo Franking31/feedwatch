@@ -178,7 +178,7 @@ async function Dashboard() {
 
 export default function DashboardPage() {
   return (
-    <div>
+    <div className="mx-auto w-full max-w-3xl px-4 py-8 md:px-10 md:py-12">
       <h1 className="mb-8 text-3xl font-bold tracking-tight">Flux et dossiers</h1>
       <Suspense fallback={<p className="text-muted">Chargement...</p>}>
         <Dashboard />

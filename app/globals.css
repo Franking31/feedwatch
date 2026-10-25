@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --paper: #f2f4f7;
+  --paper: #f4f6f9;
   --surface: #ffffff;
   --ink: #15202b;
   --muted: #5b6874;
@@ -12,11 +12,36 @@
   --mark: #ffe27a;
   --danger: #b3261e;
   --ok: #1b7a4b;
+  --rail: #1f37b8;
+  --rail-ink: #ffffff;
+  --rail-hover: rgba(255, 255, 255, 0.12);
+  --rail-active: rgba(255, 255, 255, 0.22);
   color-scheme: light;
 }
 
+/* Thème sombre choisi à la main */
+:root[data-theme="dark"] {
+  --paper: #0e141a;
+  --surface: #141c24;
+  --ink: #e7edf3;
+  --muted: #93a3b3;
+  --line: #243241;
+  --accent: #8ea2ff;
+  --accent-ink: #0e141a;
+  --accent-soft: #1d2850;
+  --mark: rgba(255, 214, 10, 0.3);
+  --danger: #ff9c94;
+  --ok: #6ed3a0;
+  --rail: #131b3f;
+  --rail-ink: #e7edf3;
+  --rail-hover: rgba(255, 255, 255, 0.1);
+  --rail-active: rgba(255, 255, 255, 0.18);
+  color-scheme: dark;
+}
+
+/* Thème sombre automatique, sauf si le clair est choisi à la main */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --paper: #0e141a;
     --surface: #141c24;
     --ink: #e7edf3;
@@ -28,6 +53,10 @@
     --mark: rgba(255, 214, 10, 0.3);
     --danger: #ff9c94;
     --ok: #6ed3a0;
+    --rail: #131b3f;
+    --rail-ink: #e7edf3;
+    --rail-hover: rgba(255, 255, 255, 0.1);
+    --rail-active: rgba(255, 255, 255, 0.18);
     color-scheme: dark;
   }
 }
@@ -43,6 +72,10 @@
   --color-accent-soft: var(--accent-soft);
   --color-danger: var(--danger);
   --color-ok: var(--ok);
+  --color-rail: var(--rail);
+  --color-rail-ink: var(--rail-ink);
+  --color-rail-hover: var(--rail-hover);
+  --color-rail-active: var(--rail-active);
   --font-sans: var(--font-grotesk), ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -145,6 +178,27 @@ mark {
   }
   .btn-quiet.btn-danger:hover {
     color: var(--danger);
+  }
+
+  /* Petit bouton carré avec une icône (favori, lu) */
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .icon-btn:hover {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .icon-btn[aria-pressed="true"] {
+    color: var(--accent);
   }
 }
 

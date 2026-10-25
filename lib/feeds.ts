@@ -1,6 +1,7 @@
 import Parser from "rss-parser";
 import { prisma } from "./prisma";
 import { fetchFeedText } from "./safe-url";
+import { cleanText } from "./text";
 
 export const parser = new Parser({ timeout: 10000 });
 
@@ -14,7 +15,7 @@ export async function saveArticles(feedId: string, items: Parser.Item[]) {
     .slice(0, 50)
     .map((item) => {
       const link = item.link?.trim();
-      const title = item.title?.trim();
+      const title = cleanText(item.title ?? "");
       if (!link || !isHttpUrl(link) || !title) return null;
 
       const date = item.isoDate ? new Date(item.isoDate) : null;
@@ -23,7 +24,7 @@ export async function saveArticles(feedId: string, items: Parser.Item[]) {
         guid: item.guid ?? link,
         title: title.slice(0, 300),
         link,
-        summary: item.contentSnippet?.slice(0, 500) ?? null,
+        summary: cleanText(item.contentSnippet ?? "").slice(0, 500) || null,
         publishedAt: date && !isNaN(date.getTime()) ? date : null,
       };
     })

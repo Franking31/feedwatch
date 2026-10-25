@@ -1,18 +1,20 @@
 import { Suspense } from "react";
 import { requireUser } from "@/lib/session";
-import SidebarNav from "./sidebar-nav";
-import SignOutButton from "./sign-out-button";
+import Rail from "./rail";
 
-async function UserBlock() {
+// L'initiale du compte connecté, en rond
+async function Avatar() {
   const user = await requireUser();
+  const initial = (user.name || user.email || "?").trim().charAt(0).toUpperCase();
+
   return (
-    <div className="border-t border-line pt-4">
-      <div className="hidden md:block">
-        <p className="truncate text-sm font-semibold">{user.name}</p>
-        <p className="mb-3 truncate text-xs text-muted">{user.email}</p>
-      </div>
-      <SignOutButton />
-    </div>
+    <span
+      title={user.email}
+      aria-label={`Connecté avec ${user.email}`}
+      className="flex h-9 w-9 items-center justify-center rounded-full bg-rail-active text-sm font-bold"
+    >
+      {initial}
+    </span>
   );
 }
 
@@ -22,22 +24,15 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen md:grid md:grid-cols-[15rem_1fr]">
-      <aside className="border-b border-line bg-surface md:sticky md:top-0 md:h-screen md:border-b-0 md:border-r">
-        <div className="flex flex-col gap-4 px-4 py-4 md:h-full md:gap-6 md:py-6">
-          <p className="text-lg font-bold tracking-tight">Feedwatch</p>
-          <SidebarNav />
-          <div className="md:mt-auto">
-            <Suspense fallback={null}>
-              <UserBlock />
-            </Suspense>
-          </div>
-        </div>
-      </aside>
-
-      <main className="mx-auto w-full max-w-3xl px-4 py-8 md:px-10 md:py-12">
-        {children}
-      </main>
+    <div className="min-h-screen md:flex">
+      <Rail
+        userSlot={
+          <Suspense fallback={<span className="block h-9 w-9" />}>
+            <Avatar />
+          </Suspense>
+        }
+      />
+      <main className="min-w-0 flex-1 pb-20 md:pb-0">{children}</main>
     </div>
   );
 }

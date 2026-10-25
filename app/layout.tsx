@@ -13,13 +13,19 @@ export const metadata: Metadata = {
   description: "Tes sources, tes mots-clés, un digest par semaine.",
 };
 
+// Applique le thème choisi avant le premier affichage
+const THEME_SCRIPT = `try{var t=localStorage.getItem("theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`;
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
-    <html lang="fr" className={grotesk.variable}>
+    <html lang="fr" className={grotesk.variable} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
       <body>{children}</body>
     </html>
   );
