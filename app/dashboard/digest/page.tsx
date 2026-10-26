@@ -2,12 +2,14 @@ import { Fragment, Suspense } from "react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { DIGEST_STYLES } from "@/lib/digest";
+import { mailConfigured } from "@/lib/mailer";
 import { saveDigestSettings, deleteDigest } from "./actions";
 import GenerateButton from "./generate-button";
+import EmailButton from "./email-button";
 import SubmitButton from "../submit-button";
 import ConfirmButton from "../confirm-button";
-import EmailButton from "./email-button";
-import { mailConfigured } from "@/lib/mailer";
+
+export const metadata = { title: "Digest" };
 
 const DAYS = [
   { value: 1, label: "Lundi" },
@@ -21,6 +23,9 @@ const DAYS = [
 
 type Source = { n: number; title: string; link: string; feed: string };
 
+// Les digests créés à moins de 30 minutes d'écart forment une même génération
+const BATCH_MS = 30 * 60 * 1000;
+
 const fmt = (d: Date) =>
   d.toLocaleDateString("fr-FR", {
     day: "numeric",
@@ -28,8 +33,6 @@ const fmt = (d: Date) =>
     year: "numeric",
     timeZone: "Europe/Paris",
   });
-
-export const metadata = { title: "Digest" };
 
 // Le texte du digest : chaque référence [3] devient un lien vers l'article cité
 function DigestText({ content, sources }: { content: string; sources: Source[] }) {
@@ -60,18 +63,16 @@ function DigestText({ content, sources }: { content: string; sources: Source[] }
   );
 }
 
-function DigestView({
-  digest,
-}: {
-  digest: {
-    id: string;
-    content: string;
-    sources: unknown;
-    articleCount: number;
-    periodStart: Date;
-    periodEnd: Date;
-  };
-}) {
+type DigestRow = {
+  id: string;
+  content: string;
+  sources: unknown;
+  articleCount: number;
+  periodStart: Date;
+  periodEnd: Date;
+};
+
+function DigestView({ digest }: { digest: DigestRow }) {
   const sources = digest.sources as Source[];
 
   return (
@@ -107,18 +108,15 @@ function DigestView({
         </ol>
       </details>
 
-     <div className="mt-6 flex flex-wrap items-center gap-4">
-        <EmailButton digestId={digest.id} />
-        <form action={deleteDigest}>
-          <input type="hidden" name="id" value={digest.id} />
-          <ConfirmButton
-            message="Supprimer ce digest ?"
-            className="btn btn-quiet btn-danger text-xs"
-          >
-            Supprimer ce digest
-          </ConfirmButton>
-        </form>
-      </div>
+      <form action={deleteDigest} className="mt-4">
+        <input type="hidden" name="id" value={digest.id} />
+        <ConfirmButton
+          message="Supprimer ce digest ?"
+          className="btn btn-quiet btn-danger text-xs"
+        >
+          Supprimer ce digest
+        </ConfirmButton>
+      </form>
     </div>
   );
 }
@@ -136,21 +134,49 @@ async function DigestPage({
     prisma.digest.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
-      take: 10,
+      take: 30,
     }),
   ]);
 
   const days = settings?.days ?? [0];
-  const [latest, ...older] = digests;
+
+  const newest = digests[0];
+  const batch = newest
+    ? digests
+        .filter((d) => newest.createdAt.getTime() - d.createdAt.getTime() < BATCH_MS)
+        .sort((a, b) => a.label.localeCompare(b.label, "fr"))
+    : [];
+  const older = digests.filter((d) => !batch.includes(d)).slice(0, 12);
 
   return (
     <>
-      {latest ? (
+      {newest ? (
         <section aria-labelledby="latest-title">
-          <h2 id="latest-title" className="mb-4 text-lg font-semibold">
-            Dernier digest, {fmt(latest.createdAt)}
-          </h2>
-          <DigestView digest={latest} />
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <h2 id="latest-title" className="text-lg font-semibold">
+              Dernier digest, {fmt(newest.createdAt)}
+            </h2>
+            <EmailButton
+              digestIds={batch.map((d) => d.id)}
+              label={batch.length > 1 ? "Tout m'envoyer par email" : "M'envoyer par email"}
+            />
+          </div>
+
+          {batch.map((d) => (
+            <div
+              key={d.id}
+              className={
+                batch.length > 1
+                  ? "mb-10 border-t border-line pt-6 first:border-t-0 first:pt-0"
+                  : ""
+              }
+            >
+              {(batch.length > 1 || d.scope !== "all") && (
+                <h3 className="mb-3 text-base font-semibold">{d.label}</h3>
+              )}
+              <DigestView digest={d} />
+            </div>
+          ))}
         </section>
       ) : (
         <p className="text-muted">
@@ -215,8 +241,24 @@ async function DigestPage({
             </select>
           </label>
 
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                name="splitByFolder"
+                defaultChecked={settings?.splitByFolder ?? false}
+                className="h-4 w-4 accent-accent"
+              />
+              Un digest par dossier
+            </label>
+            <p className="ml-6 mt-1 text-sm text-muted">
+              Un digest séparé pour chaque dossier, plus un pour les flux sans dossier.
+              Le nombre d'articles ci-dessous s'applique à chacun.
+            </p>
+          </div>
+
           <label className="flex flex-col gap-1 text-sm font-medium">
-            Nombre d'articles maximum
+            Nombre d'articles maximum (par digest)
             <input
               type="number"
               name="maxArticles"
@@ -237,19 +279,20 @@ async function DigestPage({
             />
             Utiliser mes filtres de mots-clés (garder et exclure)
           </label>
+
           <div>
             <label className="flex items-center gap-2 text-sm font-medium">
               <input
                 type="checkbox"
                 name="emailEnabled"
-                defaultChecked={settings?.emailEnabled ?? false}
+                defaultChecked={settings?.emailEnabled ?? true}
                 className="h-4 w-4 accent-accent"
               />
               Recevoir aussi mon digest par email
             </label>
             <p className="ml-6 mt-1 text-sm text-muted">
               {mailConfigured()
-                ? `Envoyé à ${user.email}, en même temps que la génération automatique.`
+                ? `Envoyé à ${user.email} les jours cochés ci-dessus, vers 7 h, s'il y a de nouveaux articles. Un seul email, avec une section par dossier.`
                 : "L'envoi d'emails n'est pas encore configuré sur ce serveur."}
             </p>
           </div>
@@ -287,8 +330,12 @@ async function DigestPage({
           </h2>
           {older.map((d) => (
             <details key={d.id} className="border-t border-line py-3">
-              <summary className="cursor-pointer font-medium">{fmt(d.createdAt)}</summary>
-              <div className="mt-4">
+              <summary className="cursor-pointer font-medium">
+                {fmt(d.createdAt)}
+                {d.scope !== "all" ? `, ${d.label}` : ""}
+              </summary>
+              <div className="mt-4 flex flex-col gap-4">
+                <EmailButton digestIds={[d.id]} />
                 <DigestView digest={d} />
               </div>
             </details>
@@ -305,7 +352,7 @@ export default function Page({
   searchParams: Promise<{ saved?: string }>;
 }) {
   return (
-    <div className="mx-auto w-full max-w-3x1 px-4 py-8 md:px-10 md:py-12">
+    <div className="mx-auto w-full max-w-3xl px-4 py-8 md:px-10 md:py-12">
       <header className="mb-8 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Digest</h1>

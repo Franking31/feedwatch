@@ -158,6 +158,7 @@ model DigestSettings {
   instructions String   @default("")
   updatedAt    DateTime @updatedAt
   emailEnabled Boolean  @default(false)
+  splitByFolder Boolean  @default(false)
 }
 
 model Digest {
@@ -170,6 +171,9 @@ model Digest {
   periodStart  DateTime
   periodEnd    DateTime
   createdAt    DateTime @default(now())
+  scope        String   @default("all")
+  label        String   @default("Tous les articles")
 
+  @@index([userId, scope, createdAt])
   @@index([userId, createdAt])
 }

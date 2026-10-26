@@ -3,10 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
-import { generateDigest, isDigestStyle } from "@/lib/digest";
+import { generateDigestsForUser, isDigestStyle } from "@/lib/digest";
 import { redirect } from "next/navigation";
 import { refreshMany } from "@/lib/feeds";
-import { emailDigest } from "@/lib/mailer";
+import { emailDigests } from "@/lib/mailer";
 import { rateLimit } from "@/lib/rate-limit";
 
 type GenState = { error?: string } | null;
@@ -19,6 +19,7 @@ export async function saveDigestSettings(formData: FormData) {
   const enabled = formData.get("enabled") === "on";
   const useFilters = formData.get("useFilters") === "on";
   const emailEnabled = formData.get("emailEnabled") === "on";
+  const splitByFolder = formData.get("splitByFolder") === "on";
 
   // 3 jours maximum, valeurs de 0 (dimanche) à 6 (samedi)
   const days = Array.from(
@@ -68,28 +69,27 @@ export async function generateDigestAction(
 ): Promise<GenState> {
   const user = await requireUser();
 
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const count = await prisma.digest.count({
-    where: { userId: user.id, createdAt: { gte: since } },
-  });
-  if (count >= 3) {
-    return { error: "Maximum 3 digests par 24 h. Réessaie plus tard." };
+  // 6 générations par heure au maximum, pour protéger ton quota d'IA
+  if (!rateLimit(`gen:${user.id}`, 6, 60 * 60 * 1000)) {
+    return { error: "Trop de générations récentes. Réessaie dans un moment." };
   }
 
-  const result = await generateDigest(user.id, { manual: true });
-  if (!result.ok) return { error: result.error };
+  // On récupère d'abord les derniers articles de tes flux
+  const feeds = await prisma.feed.findMany({
+    where: { subscriptions: { some: { userId: user.id } } },
+    select: { id: true, url: true },
+  });
+  await refreshMany(feeds);
+
+  const run = await generateDigestsForUser(user.id, { manual: true });
+  if (run.ids.length === 0) {
+    return {
+      error: run.firstError ?? "Aucun article nouveau sur la période (avec tes filtres).",
+    };
+  }
 
   revalidatePath("/dashboard/digest");
   return null;
-}
-
-export async function deleteDigest(formData: FormData) {
-  const user = await requireUser();
-  const id = String(formData.get("id") ?? "");
-  if (!id) return;
-
-  await prisma.digest.deleteMany({ where: { id, userId: user.id } });
-  revalidatePath("/dashboard/digest");
 }
 
 type MailState = { error?: string; success?: string } | null;
@@ -99,15 +99,24 @@ export async function sendDigestEmailAction(
   formData: FormData
 ): Promise<MailState> {
   const user = await requireUser();
-  const digestId = String(formData.get("digestId") ?? "");
-  if (!digestId) return { error: "Digest introuvable." };
+  const ids = formData.getAll("digestId").map(String).filter(Boolean).slice(0, 10);
+  if (ids.length === 0) return { error: "Digest introuvable." };
 
   // 5 envois par heure au maximum
   if (!rateLimit(`mail:${user.id}`, 5, 60 * 60 * 1000)) {
     return { error: "Trop d'envois récents. Réessaie dans une heure." };
   }
 
-  const result = await emailDigest(digestId, user.id);
+  const result = await emailDigests(ids, user.id);
   if (!result.ok) return { error: result.error };
   return { success: `Envoyé à ${result.to}.` };
+}
+
+export async function deleteDigest(formData: FormData) {
+  const user = await requireUser();
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+
+  await prisma.digest.deleteMany({ where: { id, userId: user.id } });
+  revalidatePath("/dashboard/digest");
 }

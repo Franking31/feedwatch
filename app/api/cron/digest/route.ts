@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { generateDigest } from "@/lib/digest";
-import { emailDigest } from "@/lib/mailer";
+import { generateDigestsForUser } from "@/lib/digest";
+import { emailDigests } from "@/lib/mailer";
 
 const WEEKDAYS: Record<string, number> = {
   Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
@@ -24,10 +24,10 @@ export async function POST(request: Request) {
     select: { userId: true, emailEnabled: true },
   });
 
-  // Sécurité : jamais deux digests en moins de 20 h pour le même compte
+  // Sécurité : jamais deux envois en moins de 20 h pour le même compte
   const recently = new Date(Date.now() - 20 * 60 * 60 * 1000);
-  let generated = 0;
-  let emailed = 0;
+  let digests = 0;
+  let emails = 0;
   let skipped = 0;
   let failed = 0;
 
@@ -40,19 +40,20 @@ export async function POST(request: Request) {
       continue;
     }
 
-    const result = await generateDigest(userId, { manual: false });
-    if (result.ok) {
-      generated++;
+    const run = await generateDigestsForUser(userId, { manual: false });
+
+    if (run.ids.length > 0) {
+      digests += run.ids.length;
       if (emailEnabled) {
-        const sent = await emailDigest(result.id, userId);
-        if (sent.ok) emailed++;
+        const sent = await emailDigests(run.ids, userId);
+        if (sent.ok) emails++;
       }
-    } else if (result.empty) {
-      skipped++;
-    } else {
+    } else if (run.failed > 0) {
       failed++;
+    } else {
+      skipped++;
     }
   }
 
-  return Response.json({ due: due.length, generated, emailed, skipped, failed });
+  return Response.json({ due: due.length, digests, emails, skipped, failed });
 }
